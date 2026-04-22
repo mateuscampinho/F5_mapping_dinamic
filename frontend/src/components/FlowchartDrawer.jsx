@@ -22,8 +22,8 @@ const nodeTypes = {
   poolMember: PoolMemberNode,
 }
 
-const NODE_W = { virtualServer: 270, irule: 260, decision: 430, pool: 230, poolMember: 190 }
-const NODE_H = { virtualServer: 140, irule: 130, decision: 320, pool: 110, poolMember: 130 }
+const NODE_W = { virtualServer: 270, irule: 260, decision: 490, pool: 370, poolMember: 190 }
+const NODE_H = { virtualServer: 140, irule: 130, decision: 340, pool: 280, poolMember: 130 }
 
 function layoutNodes(nodes, edges) {
   const g = new dagre.graphlib.Graph()

@@ -32,6 +32,7 @@ class NodeData(BaseModel):
     nodeSession: str | None = None
     memberCount: int | None = None
     policyRules: list[dict] | None = None
+    poolMembers: list[dict] | None = None
 
 
 class FlowNode(BaseModel):

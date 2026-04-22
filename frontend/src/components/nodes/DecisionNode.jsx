@@ -8,8 +8,8 @@ export default function DecisionNode({ data }) {
       background: '#1c1917',
       border: '2px solid #f97316',
       borderRadius: 8,
-      minWidth: 320,
-      maxWidth: 420,
+      minWidth: 360,
+      maxWidth: 480,
       boxShadow: '0 4px 16px rgba(249,115,22,0.25)',
       fontFamily: 'inherit',
     }}>
@@ -24,63 +24,105 @@ export default function DecisionNode({ data }) {
         borderRadius: '6px 6px 0 0',
       }}>
         <span style={{ fontSize: 10, opacity: 0.8, color: '#fed7aa' }}>LTM POLICY</span>
+        {data.matchType && (
+          <span className="badge badge-orange" style={{ fontSize: 10 }}>{data.matchType}</span>
+        )}
         <span style={{ color: '#fff', fontWeight: 700, fontSize: 13, marginLeft: 'auto' }}>{data.label}</span>
       </div>
 
-      <div style={{ padding: '8px 14px 4px' }}>
-        {data.matchType && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, color: '#94a3b8' }}>Estratégia</span>
-            <span className="badge badge-orange">{data.matchType}</span>
+      <div style={{ padding: '8px 0 4px' }}>
+        {rules.length === 0 && (
+          <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', padding: '0 14px 4px' }}>
+            Sem regras definidas
           </div>
         )}
 
         {rules.length > 0 && (
-          <div style={{
-            maxHeight: 220,
-            overflowY: 'auto',
-            borderRadius: 4,
-            border: '1px solid #292524',
-          }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-              <thead>
-                <tr style={{ background: '#292524' }}>
-                  <th style={thStyle}>#</th>
-                  <th style={thStyle}>Condição</th>
-                  <th style={thStyle}>Destino</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rules.map((r, i) => (
-                  <tr key={i} style={{
-                    background: r.isDefault ? '#1a1309' : (i % 2 === 0 ? '#1c1917' : '#221c1a'),
-                    borderTop: '1px solid #292524',
+          <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+            {rules.map((r, i) => (
+              <div key={i} style={{
+                borderTop: i > 0 ? '1px solid #292524' : undefined,
+                background: r.isDefault ? '#1a1309' : (i % 2 === 0 ? '#1c1917' : '#201c1a'),
+                padding: '6px 14px',
+              }}>
+                {/* Rule header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <span style={{
+                    fontSize: 10,
+                    color: '#64748b',
+                    fontFamily: 'monospace',
+                    minWidth: 20,
                   }}>
-                    <td style={{ ...tdStyle, color: '#64748b', width: 24 }}>
-                      {r.isDefault ? '↩' : r.ordinal + 1}
-                    </td>
-                    <td style={{ ...tdStyle, color: '#cbd5e1', maxWidth: 160, wordBreak: 'break-word' }}>
-                      {r.conditions || '—'}
-                    </td>
-                    <td style={{ ...tdStyle, maxWidth: 110, wordBreak: 'break-word' }}>
-                      <span style={{
-                        color: r.isDefault ? '#94a3b8' : '#fb923c',
-                        fontWeight: r.isDefault ? 400 : 600,
-                        fontStyle: r.isDefault ? 'italic' : 'normal',
-                      }}>
-                        {r.target}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                    {r.isDefault ? '↩' : `#${r.ordinal + 1}`}
+                  </span>
+                  <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+                    {r.name || '—'}
+                  </span>
+                  <span style={{
+                    marginLeft: 'auto',
+                    fontSize: 11,
+                    color: r.isDefault ? '#94a3b8' : '#fb923c',
+                    fontWeight: r.isDefault ? 400 : 700,
+                    fontStyle: r.isDefault ? 'italic' : 'normal',
+                    maxWidth: 140,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {r.target}
+                  </span>
+                </div>
 
-        {rules.length === 0 && (
-          <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', paddingBottom: 4 }}>
-            Sem regras definidas
+                {/* Conditions */}
+                {r.conditions && r.conditions.length > 0 && (
+                  <div style={{ marginBottom: 3 }}>
+                    {r.conditions.map((c, ci) => (
+                      <div key={ci} style={{
+                        fontSize: 10,
+                        color: '#cbd5e1',
+                        background: '#0f172a',
+                        borderRadius: 3,
+                        padding: '2px 6px',
+                        marginBottom: 2,
+                        borderLeft: '2px solid #3b82f6',
+                      }}>
+                        {c}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {r.isDefault && (
+                  <div style={{
+                    fontSize: 10,
+                    color: '#64748b',
+                    fontStyle: 'italic',
+                    background: '#0f172a',
+                    borderRadius: 3,
+                    padding: '2px 6px',
+                    marginBottom: 2,
+                    borderLeft: '2px solid #475569',
+                  }}>
+                    demais (catch-all)
+                  </div>
+                )}
+
+                {/* Actions besides pool target */}
+                {r.actions && r.actions.filter(a => !a.startsWith('→ pool') && !a.startsWith('→ node')).map((a, ai) => (
+                  <div key={ai} style={{
+                    fontSize: 10,
+                    color: '#fcd34d',
+                    background: '#1a1200',
+                    borderRadius: 3,
+                    padding: '2px 6px',
+                    marginBottom: 2,
+                    borderLeft: '2px solid #d97706',
+                  }}>
+                    {a}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -88,20 +130,4 @@ export default function DecisionNode({ data }) {
       <Handle type="source" position={Position.Bottom} />
     </div>
   )
-}
-
-const thStyle = {
-  padding: '4px 8px',
-  textAlign: 'left',
-  color: '#94a3b8',
-  fontWeight: 600,
-  fontSize: 10,
-  textTransform: 'uppercase',
-  letterSpacing: '0.05em',
-}
-
-const tdStyle = {
-  padding: '4px 8px',
-  verticalAlign: 'top',
-  color: '#e2e8f0',
 }

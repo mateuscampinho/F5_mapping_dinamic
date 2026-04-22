@@ -101,7 +101,8 @@ def build_graph(raw_data: dict) -> tuple[list[FlowNode], list[FlowEdge]]:
             policy_rules.append({
                 "name":       rule.get("name", ""),
                 "ordinal":    rule.get("ordinal", 0),
-                "conditions": _build_condition_label(rule),
+                "conditions": _build_conditions_list(rule),
+                "actions":    _build_actions_list(rule),
                 "target":     target_label,
                 "isDefault":  False,
             })
@@ -111,7 +112,8 @@ def build_graph(raw_data: dict) -> tuple[list[FlowNode], list[FlowEdge]]:
             policy_rules.append({
                 "name": "— default —",
                 "ordinal": 999,
-                "conditions": "demais",
+                "conditions": [],
+                "actions":    [f"→ pool {short_name(default_pool_path)}"],
                 "target": short_name(default_pool_path),
                 "isDefault": True,
             })
@@ -168,6 +170,23 @@ def build_graph(raw_data: dict) -> tuple[list[FlowNode], list[FlowEdge]]:
         p_id = _id("pool", pool_path)
         pool_node_ids[pool_path] = p_id
 
+        # Embed members inside the pool node instead of creating separate nodes
+        pool_members_data = []
+        for m in members:
+            m_name = m.get("name", "")
+            addr   = m.get("address", "")
+            port_str = m_name.split(":")[-1] if ":" in m_name else ""
+            try:
+                port = int(port_str)
+            except ValueError:
+                port = None
+            pool_members_data.append({
+                "label":   f"{addr}:{port}" if port else (addr or m_name),
+                "health":  m.get("healthStatus", "unknown"),
+                "session": m.get("sessionStatus", "unknown"),
+                "nodeHealth": m.get("nodeHealth", "unknown"),
+            })
+
         nodes.append(FlowNode(
             id=p_id, type="pool",
             position=NodePosition(x=px, y=Y_POOL),
@@ -177,43 +196,9 @@ def build_graph(raw_data: dict) -> tuple[list[FlowNode], list[FlowEdge]]:
                 lbMode=pool_data.get("loadBalancingMode"),
                 monitor=pool_data.get("monitor"),
                 memberCount=len(members),
+                poolMembers=pool_members_data,
             ),
         ))
-
-        # Members
-        total_m = len(members)
-        for j, m in enumerate(members):
-            m_name = m.get("name", "")
-            addr   = m.get("address", "")
-            port_str = m_name.split(":")[-1] if ":" in m_name else ""
-            try:
-                port = int(port_str)
-            except ValueError:
-                port = None
-
-            health  = m.get("healthStatus", "unknown")
-            offline = health == "offline"
-
-            m_id = _id("member", f"{pool_path}_{m_name}")
-            mx = px + (j - (total_m - 1) / 2) * 220
-            nodes.append(FlowNode(
-                id=m_id, type="poolMember",
-                position=NodePosition(x=mx, y=Y_MEMBER),
-                data=NodeData(
-                    label=f"{addr}:{port}" if port else (addr or m_name),
-                    nodeType="poolMember",
-                    address=addr or None,
-                    port=port,
-                    healthStatus=health,
-                    sessionStatus=m.get("sessionStatus", "unknown"),
-                    nodeHealth=m.get("nodeHealth", "unknown"),
-                    nodeSession=m.get("nodeSession", "unknown"),
-                ),
-            ))
-            edge(p_id, m_id,
-                 animated=not offline,
-                 style={"stroke": "#ef4444", "strokeDasharray": "4,4"} if offline
-                       else {"stroke": "#22c55e", "strokeWidth": 2})
 
     # ── Direct-node targets ───────────────────────────────────────────────────
     direct_node_ids: dict[str, str] = {}
@@ -299,37 +284,38 @@ def _build_irule_nodes(irules, y):
     return nodes
 
 
-# ── Policy condition label ────────────────────────────────────────────────────
+# ── Policy condition / action helpers ────────────────────────────────────────
 
 FIELD_MAP = {
     "httpUri": "URI", "httpHeader": "Header", "httpMethod": "Method",
     "httpHost": "Host", "httpCookie": "Cookie", "sslExtension": "SSL",
-    "httpStatus": "Status", "tcp": "TCP",
+    "httpStatus": "Status", "tcp": "TCP", "httpBasicAuth": "BasicAuth",
+    "httpReferer": "Referer", "httpConnect": "Connect",
 }
 OPS_MAP = {
     "startsWith": "começa com", "endsWith": "termina com",
     "contains": "contém", "equals": "=", "matches": "~",
+    "doesNotContain": "não contém", "doesNotEqual": "≠",
+    "doesNotStartWith": "não começa com", "doesNotEndWith": "não termina com",
+    "exists": "existe", "doesNotExist": "não existe",
 }
 
 
-def _build_condition_label(rule: dict) -> str:
+def _build_conditions_list(rule: dict) -> list[str]:
     cond_raw = rule.get("conditionsReference") or rule.get("conditions") or []
     items = cond_raw.get("items", []) if isinstance(cond_raw, dict) else (
         cond_raw if isinstance(cond_raw, list) else []
     )
+    return [s for c in items if isinstance(c, dict) for s in [_condition_str(c)] if s]
 
-    parts = []
-    for c in items[:3]:
-        if not isinstance(c, dict):
-            continue
-        s = _condition_str(c)
-        if s:
-            parts.append(s)
 
-    if parts:
-        return " & ".join(parts)
-    # No conditions = catch-all rule
-    return "demais"
+def _build_actions_list(rule: dict) -> list[str]:
+    actions_raw = rule.get("actionsReference") or rule.get("actions") or []
+    if isinstance(actions_raw, dict):
+        actions = actions_raw.get("items", [])
+    else:
+        actions = actions_raw if isinstance(actions_raw, list) else []
+    return [s for a in actions if isinstance(a, dict) for s in [_action_str(a)] if s]
 
 
 def _rule_has_conditions(rule: dict) -> bool:
@@ -341,16 +327,54 @@ def _rule_has_conditions(rule: dict) -> bool:
 
 
 def _condition_str(c: dict) -> str:
+    negated = c.get("not") or c.get("negate") or False
+    neg_pfx = "NOT " if negated else ""
     for field_key, field_label in FIELD_MAP.items():
-        if not c.get(field_key):  # True or dict
+        if not c.get(field_key):
             continue
         for op_key, op_label in OPS_MAP.items():
             if not c.get(op_key):
                 continue
             values = c.get("values", [])
-            val_str = ", ".join(f'"{v}"' for v in values[:2])
-            # Extra label for named headers/cookies
+            val_str = ", ".join(f'"{v}"' for v in values[:3])
             tm_name = c.get("tmName") or (c.get("index") if field_key in ("httpHeader", "httpCookie") else None)
             name_sfx = f"[{tm_name}]" if tm_name else ""
-            return f"{field_label}{name_sfx} {op_label} {val_str}"
+            return f"{neg_pfx}{field_label}{name_sfx} {op_label} {val_str}"
     return ""
+
+
+def _action_str(a: dict) -> str:
+    pool = a.get("pool")
+    if isinstance(pool, str) and pool:
+        return f"→ pool {short_name(pool)}"
+    node = a.get("node")
+    if isinstance(node, str) and node:
+        return f"→ node {node}"
+    fwd = a.get("forward")
+    if isinstance(fwd, dict):
+        p = fwd.get("pool")
+        if p:
+            return f"→ pool {short_name(p)}"
+    if a.get("redirect"):
+        return f"redirect {a.get('location', '')}"
+    if a.get("httpHeader"):
+        hdr = a.get("tmName") or ""
+        val = a.get("value") or ""
+        if a.get("insert"):
+            return f"insert header {hdr}: {val}"
+        if a.get("replace"):
+            return f"replace header {hdr}: {val}"
+        if a.get("remove"):
+            return f"remove header {hdr}"
+    if a.get("httpUri"):
+        return f"rewrite URI {a.get('value') or a.get('path', '')}"
+    if a.get("httpReply"):
+        return f"reply {a.get('status', '')}"
+    if a.get("persist"):
+        return "persist"
+    if a.get("disable"):
+        return "disable"
+    if a.get("enable"):
+        return "enable"
+    keys = [k for k in a if k not in ("name", "kind", "selfLink", "generation", "fullPath", "code", "ordinal")]
+    return " / ".join(keys[:3]) if keys else ""
