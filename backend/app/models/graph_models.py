@@ -87,6 +87,19 @@ class VisualizeRequest(BaseModel):
     partition: str = "Common"
 
 
+class ExportRequest(BaseModel):
+    host: str
+    username: str = "admin"
+    password: str
+    partition: str = "Common"
+
+
+class SnapshotVisualizeRequest(BaseModel):
+    vsName: str
+    vsData: dict
+    partition: str = "Common"
+
+
 class VisualizationResponse(BaseModel):
     nodes: list[FlowNode]
     edges: list[FlowEdge]

@@ -1,8 +1,54 @@
 import logging
-from app.services.f5_client import F5Client
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from app.services.f5_client import F5Client, F5ConnectionError, F5AuthError
 from app.utils.helpers import normalize_name, short_name
 
 logger = logging.getLogger(__name__)
+
+EXPORT_MAX_WORKERS = 8
+
+
+# ---------------------------------------------------------------------------
+# Full export (all VSs pipeline data in parallel)
+# ---------------------------------------------------------------------------
+
+def collect_all_vs_data(host: str, username: str, password: str,
+                        verify_ssl: bool, timeout: int,
+                        partition: str = "Common") -> dict:
+    """Fetch full pipeline data for every VS in parallel. Returns snapshot dict."""
+    def _make(h, u, p):
+        return F5Client(host=h, username=u, password=p, verify_ssl=verify_ssl, timeout=timeout)
+
+    client = _make(host, username, password)
+    vs_list = collect_all_vs(client, partition)
+
+    vs_data: dict[str, dict] = {}
+    errors: dict[str, str] = {}
+
+    def _fetch_one(vs):
+        local_client = _make(host, username, password)
+        try:
+            return vs["fullPath"], collect_vs_data(local_client, vs["fullPath"], partition)
+        except Exception as exc:
+            return vs["fullPath"], None, str(exc)
+
+    with ThreadPoolExecutor(max_workers=EXPORT_MAX_WORKERS) as pool:
+        futures = {pool.submit(_fetch_one, vs): vs["fullPath"] for vs in vs_list}
+        for future in as_completed(futures):
+            result = future.result()
+            if len(result) == 3:
+                _, _, err = result
+                errors[futures[future]] = err
+            else:
+                fp, data = result
+                vs_data[fp] = data
+
+    return {
+        "partition": partition,
+        "vsList": vs_list,
+        "vsData": vs_data,
+        "errors": errors,
+    }
 
 
 # ---------------------------------------------------------------------------

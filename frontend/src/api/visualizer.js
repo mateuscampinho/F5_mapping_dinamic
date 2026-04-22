@@ -23,5 +23,17 @@ async function post(path, body) {
   return res.json()
 }
 
-export const connectAndList = (body) => post('/api/connect', body)
-export const fetchVisualization = (body) => post('/api/visualize', body)
+export const connectAndList       = (body) => post('/api/connect', body)
+export const fetchVisualization   = (body) => post('/api/visualize', body)
+export const exportSnapshot       = (body) => post('/api/export', body)
+export const visualizeFromSnapshot = (body) => post('/api/visualize-snapshot', body)
+
+export function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}

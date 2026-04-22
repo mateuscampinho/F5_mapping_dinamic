@@ -6,7 +6,7 @@ import ReactFlow, {
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import dagre from 'dagre'
-import { fetchVisualization } from '../api/visualizer'
+import { fetchVisualization, visualizeFromSnapshot } from '../api/visualizer'
 
 import VirtualServerNode from './nodes/VirtualServerNode'
 import IruleNode from './nodes/IruleNode'
@@ -98,7 +98,7 @@ function InnerFlow({ rawNodes, rawEdges }) {
   )
 }
 
-export default function FlowchartDrawer({ vs, session, onClose }) {
+export default function FlowchartDrawer({ vs, session, snapshotVsData, partition, onClose }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [data, setData] = useState(null)
@@ -107,20 +107,29 @@ export default function FlowchartDrawer({ vs, session, onClose }) {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetchVisualization({
-        host: session.host,
-        vsName: vs.fullPath,
-        username: session.username,
-        password: session.password,
-        partition: vs.partition,
-      })
+      let res
+      if (snapshotVsData) {
+        res = await visualizeFromSnapshot({
+          vsName: vs.fullPath,
+          vsData: snapshotVsData,
+          partition: partition || vs.partition,
+        })
+      } else {
+        res = await fetchVisualization({
+          host: session.host,
+          vsName: vs.fullPath,
+          username: session.username,
+          password: session.password,
+          partition: vs.partition,
+        })
+      }
       setData(res)
     } catch (err) {
       setError(err.message || 'Erro ao carregar pipeline')
     } finally {
       setLoading(false)
     }
-  }, [vs, session])
+  }, [vs, session, snapshotVsData, partition])
 
   useEffect(() => { load() }, [load])
 

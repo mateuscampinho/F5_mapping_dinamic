@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import VsCard from './VsCard'
 
-export default function Dashboard({ session, vsList, onSelectVs, onLogout, onRefresh, refreshing }) {
+export default function Dashboard({ session, vsList, onSelectVs, onLogout, onRefresh, refreshing, onExport, exporting, isOffline }) {
   const [search, setSearch] = useState('')
 
   const filtered = useMemo(() => {
@@ -31,21 +31,42 @@ export default function Dashboard({ session, vsList, onSelectVs, onLogout, onRef
           )}
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button
-            className="btn btn-ghost"
-            style={{ padding: '5px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
-            onClick={onRefresh}
-            disabled={refreshing}
-            title="Recarregar lista de VSs"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-                 style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }}>
-              <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-            </svg>
-            {refreshing ? 'Atualizando…' : 'Atualizar'}
-          </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {isOffline && (
+            <span style={{
+              fontSize: 11, color: '#f59e0b', background: '#1c1400',
+              border: '1px solid #d97706', borderRadius: 4, padding: '3px 8px',
+            }}>
+              modo offline
+            </span>
+          )}
+          {!isOffline && (
+            <>
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '5px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+                onClick={onRefresh}
+                disabled={refreshing}
+                title="Recarregar lista de VSs"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                     style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }}>
+                  <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+                {refreshing ? 'Atualizando…' : 'Atualizar'}
+              </button>
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '5px 14px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: '#4ade80' }}
+                onClick={onExport}
+                disabled={exporting}
+                title="Exportar snapshot de todos os VSs"
+              >
+                {exporting ? 'Exportando…' : '↓ Exportar snapshot'}
+              </button>
+            </>
+          )}
           <button className="btn btn-ghost" style={{ padding: '5px 14px', fontSize: 12 }} onClick={onLogout}>
             Sair
           </button>

@@ -1,12 +1,14 @@
 import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from app.models.graph_models import (
     ConnectRequest, ConnectResponse, VsSummary,
     VisualizeRequest, VisualizationResponse,
+    ExportRequest, SnapshotVisualizeRequest,
 )
 from app.services.f5_client import F5Client, F5AuthError, F5NotFoundError, F5ConnectionError, F5APIError
-from app.services.f5_collector import collect_all_vs, collect_vs_data
+from app.services.f5_collector import collect_all_vs, collect_vs_data, collect_all_vs_data
 from app.services.graph_builder import build_graph
 from app.config import settings
 from app.utils.helpers import short_name, partition_from_path
@@ -112,6 +114,54 @@ async def visualize_vs(request: VisualizeRequest):
             "fetchedAt": datetime.now(timezone.utc).isoformat(),
             "totalNodes": len(nodes),
             "totalEdges": len(edges),
+        },
+    )
+
+
+@router.post("/export")
+async def export_snapshot(request: ExportRequest):
+    """Export full pipeline data for all VSs as a portable snapshot JSON."""
+    try:
+        snapshot = collect_all_vs_data(
+            host=request.host,
+            username=request.username,
+            password=request.password,
+            verify_ssl=settings.f5_verify_ssl,
+            timeout=settings.f5_request_timeout,
+            partition=request.partition,
+        )
+    except Exception as exc:
+        _handle_f5_errors(exc, request.host)
+
+    snapshot["exportedAt"] = datetime.now(timezone.utc).isoformat()
+    snapshot["host"] = request.host
+    return JSONResponse(content=snapshot)
+
+
+@router.post("/visualize-snapshot", response_model=VisualizationResponse)
+async def visualize_snapshot(request: SnapshotVisualizeRequest):
+    """Build pipeline graph from a local snapshot — no F5 calls."""
+    raw_data = request.vsData
+    if not raw_data:
+        raise HTTPException(status_code=400, detail="vsData is empty")
+    try:
+        nodes, edges = build_graph(raw_data)
+    except Exception as exc:
+        logger.exception("Error building graph from snapshot")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    vs = raw_data.get("vs", {})
+    return VisualizationResponse(
+        nodes=nodes,
+        edges=edges,
+        meta={
+            "vsName": vs.get("name", request.vsName),
+            "partition": request.partition,
+            "host": "snapshot",
+            "fetchedAt": datetime.now(timezone.utc).isoformat(),
+            "totalNodes": len(nodes),
+            "totalEdges": len(edges),
+            "offline": True,
         },
     )
 
