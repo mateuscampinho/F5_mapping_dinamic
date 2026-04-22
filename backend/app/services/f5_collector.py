@@ -14,26 +14,45 @@ def collect_all_vs(client: F5Client, partition: str = "Common") -> list[dict]:
         "virtual?$select=name,fullPath,partition,destination,pool,ipProtocol,enabled,description"
     )
     vs_list = resp.get("items", [])
+
+    # Single call to get stats for all pools at once
+    pool_stats = _get_all_pool_stats(client)
+
     for vs in vs_list:
         pool_name = vs.get("pool")
-        vs["_poolInfo"] = _get_pool_summary(client, pool_name, partition) if pool_name else {
-            "name": None, "memberCount": 0, "availableCount": 0, "offlineCount": 0
+        if not pool_name:
+            vs["_poolInfo"] = {"name": None, "memberCount": 0, "availableCount": 0, "offlineCount": 0}
+            continue
+        stats = pool_stats.get(pool_name) or pool_stats.get(short_name(pool_name), {})
+        vs["_poolInfo"] = {
+            "name": short_name(pool_name),
+            "memberCount":   stats.get("memberCount", 0),
+            "availableCount": stats.get("availableCount", 0),
+            "offlineCount":  stats.get("offlineCount", 0),
         }
     return vs_list
 
 
-def _get_pool_summary(client, pool_name, partition):
-    norm = normalize_name(pool_name, partition)
-    info = {"name": short_name(pool_name), "memberCount": 0, "availableCount": 0, "offlineCount": 0}
+def _get_all_pool_stats(client: F5Client) -> dict:
+    """Returns {pool_fullPath: {memberCount, availableCount, offlineCount}} in one API call."""
+    result = {}
     try:
-        members = client.get_ltm(f"pool/{norm}/members").get("items", [])
-        info["memberCount"] = len(members)
-        avail = sum(1 for m in members if _member_availability(m) == "available")
-        info["availableCount"] = avail
-        info["offlineCount"] = len(members) - avail
+        resp = client.get_ltm("pool/stats")
+        for url_key, url_val in resp.get("entries", {}).items():
+            ne = url_val.get("nestedStats", {}).get("entries", {})
+            name = ne.get("tmName", {}).get("description", "")
+            if not name:
+                continue
+            total     = int(ne.get("memberCnt",          {}).get("value", 0))
+            available = int(ne.get("activeMemberCnt",     {}).get("value", 0))
+            result[name] = {
+                "memberCount":    total,
+                "availableCount": available,
+                "offlineCount":   max(0, total - available),
+            }
     except Exception as exc:
-        logger.warning("Pool summary %s: %s", pool_name, exc)
-    return info
+        logger.warning("Pool bulk stats: %s", exc)
+    return result
 
 
 # ---------------------------------------------------------------------------
