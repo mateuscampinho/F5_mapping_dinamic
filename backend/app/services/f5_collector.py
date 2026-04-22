@@ -101,29 +101,34 @@ def _get_node_map(client: F5Client) -> dict:
     node_map = {}
     try:
         items = client.get_ltm("node").get("items", [])
+
+        # Fetch all node stats in a single call instead of one per node
+        bulk_stats = {}
+        try:
+            stats_resp = client.get_ltm("node/stats")
+            for url_key, url_val in stats_resp.get("entries", {}).items():
+                ne = url_val.get("nestedStats", {}).get("entries", {})
+                addr = ne.get("addr", {}).get("description", "")
+                if not addr:
+                    continue
+                bulk_stats[addr] = {
+                    "health": ne.get("status.availabilityState", {}).get("description", "unknown"),
+                    "session": ne.get("sessionStatus", {}).get("description", "unknown"),
+                    "enabledState": ne.get("status.enabledState", {}).get("description", "unknown"),
+                }
+        except Exception as exc:
+            logger.warning("Node bulk stats: %s", exc)
+
         for n in items:
             addr = n.get("address", "")
-            health = _availability_from_states(n.get("state", ""), n.get("session", ""))
-            # Fetch individual node stats for richer status
-            try:
-                norm = normalize_name(n.get("fullPath", n["name"]))
-                stats_resp = client.get_ltm(f"node/{norm}/stats")
-                ne = _first_nested_entries(stats_resp)
-                avail = ne.get("status.availabilityState", {}).get("description", "unknown")
-                enabled = ne.get("status.enabledState", {}).get("description", "unknown")
-                session_desc = ne.get("sessionStatus", {}).get("description", "unknown")
-                health = avail
-                n["_sessionDesc"] = session_desc
-                n["_enabledState"] = enabled
-            except Exception:
-                pass
+            stats = bulk_stats.get(addr, {})
             node_map[addr] = {
                 "name": short_name(n.get("fullPath", n.get("name", addr))),
                 "fullPath": n.get("fullPath", n.get("name", addr)),
                 "address": addr,
-                "health": health,
-                "session": n.get("_sessionDesc", n.get("session", "unknown")),
-                "enabledState": n.get("_enabledState", "unknown"),
+                "health": stats.get("health") or _availability_from_states(n.get("state", ""), n.get("session", "")),
+                "session": stats.get("session", n.get("session", "unknown")),
+                "enabledState": stats.get("enabledState", "unknown"),
             }
     except Exception as exc:
         logger.warning("Node map: %s", exc)
