@@ -3,6 +3,7 @@ import LoginPage from './components/LoginPage'
 import Dashboard from './components/Dashboard'
 import FlowchartDrawer from './components/FlowchartDrawer'
 import { connectAndList, exportSnapshot, downloadJson } from './api/visualizer'
+// connectAndList kept for handleRefresh
 
 export default function App() {
   const [phase, setPhase] = useState('login')
@@ -14,16 +15,16 @@ export default function App() {
   const [selectedVs, setSelectedVs] = useState(null)
   const [exporting, setExporting] = useState(false)
 
-  const isOffline = snapshot !== null
+  const isOffline = snapshot !== null && session === null
 
   const handleConnect = async (form) => {
     setLoading(true)
     setLoginError(null)
     try {
-      const res = await connectAndList(form)
+      const snap = await exportSnapshot(form)
       setSession({ host: form.host, username: form.username, password: form.password, partition: form.partition })
-      setSnapshot(null)
-      setVsList(res.vsList)
+      setSnapshot(snap)
+      setVsList(snap.vsList)
       setPhase('dashboard')
     } catch (err) {
       setLoginError(err)

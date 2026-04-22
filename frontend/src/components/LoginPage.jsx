@@ -91,7 +91,7 @@ export default function LoginPage({ onConnect, onLoadSnapshot, loading, error })
           )}
 
           <button className="btn btn-primary btn-full" disabled={loading}>
-            {loading ? 'Conectando…' : 'Conectar ao F5'}
+            {loading ? 'Carregando configurações do F5… (pode demorar)' : 'Conectar ao F5'}
           </button>
         </form>
 
