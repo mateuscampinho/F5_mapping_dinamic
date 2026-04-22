@@ -31,6 +31,7 @@ class NodeData(BaseModel):
     nodeHealth: str | None = None
     nodeSession: str | None = None
     memberCount: int | None = None
+    policyRules: list[dict] | None = None
 
 
 class FlowNode(BaseModel):

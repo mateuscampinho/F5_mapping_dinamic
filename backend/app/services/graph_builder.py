@@ -90,6 +90,32 @@ def build_graph(raw_data: dict) -> tuple[list[FlowNode], list[FlowEdge]]:
         if isinstance(strategy, str):
             strategy = strategy.split("/")[-1]
 
+        rules = policy.get("_rules", [])
+
+        # Build inline rule list for the node
+        policy_rules = []
+        for rule in rules:
+            target_pool    = rule.get("_targetPool")
+            target_node_ip = rule.get("_targetNodeIp")
+            target_label   = short_name(target_pool) if target_pool else (target_node_ip or "—")
+            policy_rules.append({
+                "name":       rule.get("name", ""),
+                "ordinal":    rule.get("ordinal", 0),
+                "conditions": _build_condition_label(rule),
+                "target":     target_label,
+                "isDefault":  False,
+            })
+
+        last_rule_is_catchall = rules and not _rule_has_conditions(rules[-1])
+        if default_pool_path and not last_rule_is_catchall:
+            policy_rules.append({
+                "name": "— default —",
+                "ordinal": 999,
+                "conditions": "demais",
+                "target": short_name(default_pool_path),
+                "isDefault": True,
+            })
+
         nodes.append(FlowNode(
             id=p_id, type="decision",
             position=NodePosition(x=X_CENTER, y=Y_DECISION),
@@ -97,6 +123,7 @@ def build_graph(raw_data: dict) -> tuple[list[FlowNode], list[FlowEdge]]:
                 label=short_name(policy.get("fullPath", policy.get("name", ""))),
                 nodeType="decision",
                 matchType=str(strategy),
+                policyRules=policy_rules,
             ),
         ))
         decision_ids.append(p_id)
@@ -104,20 +131,16 @@ def build_graph(raw_data: dict) -> tuple[list[FlowNode], list[FlowEdge]]:
         for src in prev:
             edge(src, p_id, style={"stroke": "#475569", "strokeWidth": 2})
 
-        for rule in policy.get("_rules", []):
-            cond_label = _build_condition_label(rule)
-            target_pool   = rule.get("_targetPool")
+        for rule in rules:
+            target_pool    = rule.get("_targetPool")
             target_node_ip = rule.get("_targetNodeIp")
             if target_pool:
-                pending_rule_edges.append((p_id, target_pool, cond_label, False, False))
+                pending_rule_edges.append((p_id, target_pool, None, False, False))
             elif target_node_ip:
-                pending_rule_edges.append((p_id, target_node_ip, cond_label, False, True))
+                pending_rule_edges.append((p_id, target_node_ip, None, False, True))
 
-        # "no match" → default pool (only if last rule has conditions, i.e. no catch-all)
-        rules = policy.get("_rules", [])
-        last_rule_is_catchall = rules and not _rule_has_conditions(rules[-1])
         if default_pool_path and not last_rule_is_catchall:
-            pending_rule_edges.append((p_id, default_pool_path, "no match", True, False))
+            pending_rule_edges.append((p_id, default_pool_path, "default", True, False))
 
     if decision_ids:
         prev = decision_ids
