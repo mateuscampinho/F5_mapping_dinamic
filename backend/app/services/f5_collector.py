@@ -5,7 +5,7 @@ from app.utils.helpers import normalize_name, short_name
 
 logger = logging.getLogger(__name__)
 
-EXPORT_MAX_WORKERS = 8
+EXPORT_MAX_WORKERS = 3
 
 
 # ---------------------------------------------------------------------------
@@ -16,31 +16,34 @@ def collect_all_vs_data(host: str, username: str, password: str,
                         verify_ssl: bool, timeout: int,
                         partition: str = "Common") -> dict:
     """Fetch full pipeline data for every VS in parallel. Returns snapshot dict."""
-    def _make(h, u, p):
-        return F5Client(host=h, username=u, password=p, verify_ssl=verify_ssl, timeout=timeout)
+    def _make():
+        return F5Client(host=host, username=username, password=password,
+                        verify_ssl=verify_ssl, timeout=timeout)
 
-    client = _make(host, username, password)
+    client = _make()
     vs_list = collect_all_vs(client, partition)
+
+    # Pre-fetch node_map once — reused by all VSs
+    node_map = _get_node_map(client)
 
     vs_data: dict[str, dict] = {}
     errors: dict[str, str] = {}
 
     def _fetch_one(vs):
-        local_client = _make(host, username, password)
+        local_client = _make()
         try:
-            return vs["fullPath"], collect_vs_data(local_client, vs["fullPath"], partition)
+            data = collect_vs_data(local_client, vs["fullPath"], partition, node_map=node_map)
+            return vs["fullPath"], data, None
         except Exception as exc:
             return vs["fullPath"], None, str(exc)
 
     with ThreadPoolExecutor(max_workers=EXPORT_MAX_WORKERS) as pool:
         futures = {pool.submit(_fetch_one, vs): vs["fullPath"] for vs in vs_list}
         for future in as_completed(futures):
-            result = future.result()
-            if len(result) == 3:
-                _, _, err = result
-                errors[futures[future]] = err
+            fp, data, err = future.result()
+            if err:
+                errors[fp] = err
             else:
-                fp, data = result
                 vs_data[fp] = data
 
     return {
@@ -105,7 +108,8 @@ def _get_all_pool_stats(client: F5Client) -> dict:
 # Full VS data for flowchart
 # ---------------------------------------------------------------------------
 
-def collect_vs_data(client: F5Client, vs_name: str, partition: str = "Common") -> dict:
+def collect_vs_data(client: F5Client, vs_name: str, partition: str = "Common",
+                    node_map: dict | None = None) -> dict:
     norm_vs = normalize_name(vs_name, partition)
     vs = client.get_ltm(f"virtual/{norm_vs}")
 
@@ -113,8 +117,8 @@ def collect_vs_data(client: F5Client, vs_name: str, partition: str = "Common") -
     policies  = _get_policies_with_rules(client, norm_vs, partition)
     irules    = _get_irule_contents(client, vs.get("rules") or [], partition)
 
-    # Collect all node objects (for IP → name resolution)
-    node_map = _get_node_map(client)
+    if node_map is None:
+        node_map = _get_node_map(client)
 
     # Determine all unique pool + node targets
     pool_paths   = set()
